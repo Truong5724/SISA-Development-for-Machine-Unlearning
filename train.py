@@ -104,7 +104,7 @@ for shard in tqdm(range(args.shards)):
         raise "Unsupported optimizer"
     
     # Init scheduler
-    scheduler = CosineAnnealingWarmRestarts(optimizer, T_max=args.epochs)
+    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs)
 
     # Init center vector
     center = torch.zeros(128).to(device)
@@ -115,7 +115,7 @@ for shard in tqdm(range(args.shards)):
     for sl in tqdm(range(args.slices)):
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
-            args.container, args.shard, until=(sl + 1) * slice_size
+            args.container, shard, until=(sl + 1) * slice_size
         )
 
         # If checkpoints exists, skip the slice.
@@ -190,7 +190,7 @@ for shard in tqdm(range(args.shards)):
 
                 for images, labels in fetchShardBatch(
                     args.container,
-                    args.shard,
+                    shard,
                     args.batch_size,
                     args.dataset,
                     class_id,
