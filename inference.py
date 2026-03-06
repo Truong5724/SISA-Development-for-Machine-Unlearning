@@ -56,38 +56,68 @@ model.to(device)
 with open("containers/{}/centers.json".format(args.container)) as f:
     centers = json.loads(f.read())
 
-for shard in tqdm(range(args.shards)):
-    # Load model weights from shard checkpoint (last slice).
-    model.load_state_dict(
-        torch.load(
-            "containers/{}/cache/shard-{}.pt".format(
-                args.container, shard
+model.eval()
+
+correct = 0
+total = 0
+
+all_preds = []
+all_labels = []
+
+with torch.no_grad():
+    for test_images, test_labels in tqdm(fetchTestBatch(args.dataset, args.batch_size)):
+
+        gpu_test_images = torch.from_numpy(test_images).to(device)
+        gpu_test_labels = torch.from_numpy(test_labels).to(device)
+
+        batch_preds = []
+
+        for shard in range(args.shards):
+            # Load model
+            model.load_state_dict(
+                torch.load(f"containers/{args.container}/cache/shard-{shard}.pt")
             )
-        )
-    )
 
-    class_id = shard
-    correct = 0
-    total = 0
+            center = torch.from_numpy(
+                np.array(centers[str(shard)]["center"])
+            ).to(device)
 
-    center = torch.from_numpy(np.array(centers[str(shard)]["center"])).to(device)
-    threshold = centers[str(shard)]["threshold"]
+            threshold = centers[str(shard)]["threshold"]
 
-    model.eval()
-    with torch.no_grad():  
-        for test_images, test_labels in fetchTestBatch(args.dataset, args.batch_size):
-            gpu_test_images = torch.from_numpy(test_images).to(device)
-            gpu_test_labels = torch.from_numpy(test_labels).to(device)
+            embeddings = model(gpu_test_images)
 
-            binary_labels = (gpu_test_labels == class_id).long()
-
-            test_embeddings = model(gpu_test_images)
-            cos_sim = F.cosine_similarity(test_embeddings, center.unsqueeze(0), dim=1)
+            cos_sim = F.cosine_similarity(
+                embeddings,
+                center.unsqueeze(0),
+                dim=1
+            )
 
             preds = (cos_sim > threshold).long()
 
-            correct += (preds == binary_labels).sum().item()
-            total += binary_labels.size(0)
+            batch_preds.append(preds)
 
-    test_acc = 100 * correct / total
-    print(f" Shard{shard} accuracy : {test_acc:.2f}%")
+        # Shape (batch_size, shards)
+        pred_matrix = torch.stack(batch_preds, dim=1)
+
+        # Predicted class (Pick the class which the first shard predicted as 1, if none, then -1)
+        pred_class = torch.argmax(pred_matrix, dim=1)
+
+        # Detect rows with all 0 (If no shard predicted as 1, then set class to -1)
+        mask = pred_matrix.sum(dim=1) == 0
+        pred_class[mask] = -1
+
+        correct += (pred_class == gpu_test_labels).sum().item()
+        total += gpu_test_labels.size(0)
+
+        all_preds.append(pred_class.cpu().numpy())
+        all_labels.append(gpu_test_labels.cpu().numpy())
+
+acc = 100 * correct / total
+print(f"Overall accuracy: {acc:.2f}%")
+
+# Save predictions and labels for analysis
+all_preds = np.concatenate(all_preds)
+all_labels = np.concatenate(all_labels)
+
+output = np.stack((all_preds, all_labels), axis=1)
+np.save(f"containers/{args.container}/output/predictions.npy", output)
