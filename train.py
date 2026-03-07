@@ -1,8 +1,9 @@
 import numpy as np
 import torch
+from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
-from torch.optim import AdamW, SGD
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from torch.optim import Adam, SGD
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from sharded import sizeOfShard, getShardHash, fetchShardBatch, fetchValBatch
 import os
@@ -76,13 +77,38 @@ device = torch.device(
 model = model_lib.Model(dropout_rate=args.dropout_rate)
 model.to(device)
 
-def cosine_center_loss(embeddings, center):
-    center = F.normalize(center, dim=0)
-    cos_sim = F.cosine_similarity(embeddings, center.unsqueeze(0), dim=1)
-    loss = (1 - cos_sim).mean()
-    return loss
+# Init loss function.
+loss_fn = CrossEntropyLoss()
 
-centers = {}
+class EarlyStopping:
+  def __init__(self, patience=10, min_delta=0, mode='max'):
+      self.patience = patience
+      self.min_delta = min_delta
+      self.mode = mode
+      self.best_score = None
+      self.counter = 0
+      self.early_stop = False
+
+  def __call__(self, metric):
+      if self.best_score is None:
+          self.best_score = metric
+          return False
+
+      if self.mode == 'max':
+          improvement = metric - self.best_score
+      else:
+          improvement = self.best_score - metric
+
+      if improvement > self.min_delta:
+          self.best_score = metric
+          self.counter = 0
+      else:
+          self.counter += 1
+
+      if self.counter >= self.patience:
+          self.early_stop = True
+
+      return self.early_stop
 
 for shard in tqdm(range(args.shards)):         
     shard_size = sizeOfShard(args.container, shard)
@@ -97,22 +123,23 @@ for shard in tqdm(range(args.shards)):
 
     # Instantiate optimizer
     if args.optimizer == "adam":
-        optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
+        optimizer = Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
     elif args.optimizer == "sgd":
         optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4, nesterov=True)
     else:
         raise "Unsupported optimizer"
+
+    # Init ReduceLROnPlateau scheduler 
+    reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=0.00001)
     
-    # Init scheduler
-    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs)
-
-    # Init center vector
-    center = torch.zeros(128).to(device)
-
-    # Each shard we can get a different threshold, so we store them in a list to be able to use them during inference.
-    threshold = 0.0
+    # Init EarlyStopping
+    early_stopping = EarlyStopping(patience=10, min_delta=0.002, mode='max')
 
     for sl in tqdm(range(args.slices)):
+        # Reset learning rate for each slice.
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = args.learning_rate
+
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
             args.container, shard, until=(sl + 1) * slice_size
@@ -137,7 +164,7 @@ for shard in tqdm(range(args.shards)):
                 )
                 if len(recovery_list) > 0:
                     print(
-                        "Recovery mode for shard {} on slice {}".format(args.shard, sl)
+                        "Recovery mode for shard {} on slice {}".format(shard, sl)
                     )
 
                     # Load weights.
@@ -158,7 +185,7 @@ for shard in tqdm(range(args.shards)):
                 # If there is no recovery checkpoint and this slice is not the first, load previous slice.
                 elif sl > 0:
                     previous_slice_hash = getShardHash(
-                        args.container, args.shard, until=sl * slice_size
+                        args.container, shard, until=sl * slice_size
                     )
 
                     # Load weights.
@@ -186,7 +213,6 @@ for shard in tqdm(range(args.shards)):
 
                 epoch_start_time = time()
                 running_loss = 0.0
-                all_embeddings = []
 
                 for images, labels in fetchShardBatch(
                     args.container,
@@ -203,8 +229,8 @@ for shard in tqdm(range(args.shards)):
                     forward_start_time = time()
 
                     # Perform basic training step.
-                    embeddings = model(gpu_images)
-                    loss = cosine_center_loss(embeddings, center)
+                    logits = model(gpu_images)
+                    loss = loss_fn(logits, gpu_labels)
 
                     optimizer.zero_grad()
                     loss.backward()
@@ -212,15 +238,6 @@ for shard in tqdm(range(args.shards)):
 
                     train_time += time() - forward_start_time
                     running_loss += loss.item()
-                    all_embeddings.append(embeddings.detach())
-                
-                # ===== UPDATE CENTER =====
-                all_embeddings = torch.cat(all_embeddings)
-                center = all_embeddings.mean(dim=0)
-
-                # ===== THRESHOLD =====
-                cos_vals = F.cosine_similarity(all_embeddings, center.unsqueeze(0), dim=1)
-                threshold = cos_vals.mean() - 2 * cos_vals.std()
 
                 # ===== VALIDATION =====
                 model.eval()   
@@ -233,12 +250,11 @@ for shard in tqdm(range(args.shards)):
                         gpu_val_images = torch.from_numpy(val_images).to(device)
                         gpu_val_labels = torch.from_numpy(val_labels).to(device)
 
+                        # Convert to Yes/No labels
                         binary_labels = (gpu_val_labels == class_id).long()
 
-                        val_embeddings = model(gpu_val_images)
-                        cos_sim = F.cosine_similarity(val_embeddings, center.unsqueeze(0), dim=1)
-
-                        preds = (cos_sim > threshold).long()
+                        outputs = model(gpu_val_images)
+                        preds = torch.argmax(outputs, dim=1)
 
                         correct += (preds == binary_labels).sum().item()
                         total += binary_labels.size(0)
@@ -246,7 +262,12 @@ for shard in tqdm(range(args.shards)):
                 val_acc = 100 * correct / total
                 print(f" [Epoch {epoch+1}] - Loss: {running_loss:.4f} - Val accuracy : {val_acc:.2f}%")
 
-                scheduler.step()
+                if early_stopping(val_acc):
+                  print("Early stopping triggered!")
+                  break
+
+                # Update scheduler base on val_acc.
+                reduce_lr.step(val_acc)
 
                 # Create a checkpoint every chkpt_interval.
                 if (
@@ -331,13 +352,13 @@ for shard in tqdm(range(args.shards)):
                 os.symlink(
                     "{}.pt".format(slice_hash),
                     "containers/{}/cache/shard-{}.pt".format(
-                        args.container, args.shard
+                        args.container, shard
                     ),
                 )
                 os.symlink(
                     "{}.time".format(slice_hash),
                     "containers/{}/times/shard-{}.time".format(
-                        args.container, args.shard
+                        args.container, shard
                     ),
                 )
 
@@ -345,26 +366,17 @@ for shard in tqdm(range(args.shards)):
             os.symlink(
                 "{}.pt".format(slice_hash),
                 "containers/{}/cache/shard-{}.pt".format(
-                    args.container, args.shard
+                    args.container, shard
                 ),
             )
             if not os.path.exists(
                 "containers/{}/times/shard-{}.time".format(
-                    args.container, args.shard
+                    args.container, shard
                 )
             ):
                 os.symlink(
                     "null.time",
                     "containers/{}/times/shard-{}.time".format(
-                        args.container, args.shard
+                        args.container, shard
                     ),
                 )
-
-    centers[str(shard)] = {
-        "center": center.cpu().numpy().tolist(),
-        "threshold": threshold
-    }
-
-# Save thresholds for inference use.
-with open("containers/{}/centers.json".format(args.container), "w") as f:
-    json.dump(centers, f)

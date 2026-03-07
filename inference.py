@@ -53,16 +53,13 @@ device = torch.device(
 model = model_lib.Model(dropout_rate=args.dropout_rate)
 model.to(device)
 
-with open("containers/{}/centers.json".format(args.container)) as f:
-    centers = json.loads(f.read())
-
-model.eval()
-
 correct = 0
 total = 0
 
 all_preds = []
 all_labels = []
+
+model.eval()
 
 with torch.no_grad():
     for test_images, test_labels in tqdm(fetchTestBatch(args.dataset, args.batch_size)):
@@ -78,21 +75,8 @@ with torch.no_grad():
                 torch.load(f"containers/{args.container}/cache/shard-{shard}.pt")
             )
 
-            center = torch.from_numpy(
-                np.array(centers[str(shard)]["center"])
-            ).to(device)
-
-            threshold = centers[str(shard)]["threshold"]
-
-            embeddings = model(gpu_test_images)
-
-            cos_sim = F.cosine_similarity(
-                embeddings,
-                center.unsqueeze(0),
-                dim=1
-            )
-
-            preds = (cos_sim > threshold).long()
+            outputs = model(gpu_test_images)
+            preds = torch.argmax(outputs, dim=1)
 
             batch_preds.append(preds)
 

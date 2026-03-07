@@ -39,7 +39,7 @@ if not shards == nb_classes:
     raise ValueError(f"Requested {shards} shards but dataset only has {nb_classes} classes")
 
 # Build partition: each shard contains indices for a single class
-data_distribution = datasetfile["nb_data_per_label"]
+data_distribution = datasetfile["nb_data_per_shard"]
 partitions = []
 start = 0
 

@@ -50,8 +50,58 @@ def create_label_map(X, y):
 
 train_map = create_label_map(X_train, y_train)
 
+# Add false samples to each shard (We take 1/9 from other shards
+# so that the number of positive and negative samples are the same).
+
+np.random.seed(57) 
+shard_data = {}
+
+for shard_label in train_map.keys():
+
+    true_images = train_map[shard_label]
+    n_true = len(true_images)
+
+    true_labels = np.ones(n_true)
+
+    false_images = []
+
+    per_other = n_true // (len(train_map) - 1)
+
+    for other_label in train_map.keys():
+        if other_label == shard_label:
+            continue
+
+        other_images = train_map[other_label]
+
+        # Random sample 1/9
+        idx = np.random.choice(len(other_images), per_other, replace=False)
+        sampled = other_images[idx]
+
+        false_images.append(sampled)
+
+    false_images = np.concatenate(false_images, axis=0)
+    false_labels = np.zeros(len(false_images))
+
+    # Combine
+    X_shard = np.concatenate([true_images, false_images], axis=0)
+    y_shard = np.concatenate([true_labels, false_labels], axis=0)
+
+    # Shuffle
+    perm = np.random.permutation(len(X_shard))
+    X_shard = X_shard[perm]
+    y_shard = y_shard[perm]
+
+    shard_data[shard_label] = {
+        "X": X_shard,
+        "y": y_shard
+    }
+
+# Save
+if not os.path.exists("cifar10_shards.npy"):
+    np.save("cifar10_shards.npy", shard_data, allow_pickle=True)
+
 if not os.path.exists(f'cifar10_train.npy'):
-    np.save(f'cifar10_train.npy', train_map, allow_pickle=True)
+    np.save(f'cifar10_train.npy', shard_data, allow_pickle=True)
 
 if not os.path.exists(f'cifar10_val.npy'):
     np.save(f'cifar10_val.npy', {'X': X_val, 'y': y_val})
@@ -63,10 +113,10 @@ if not os.path.exists(f'cifar10_test.npy'):
 with open('cifar-10-batches-py/batches.meta', 'rb') as f:
     meta = pickle.load(f, encoding='bytes')
     label_names = [name.decode('utf-8') for name in meta[b'label_names']]
-    label_map = {i: name for i, name in enumerate(label_names)}
+    label_map = {str(i): name for i, name in enumerate(label_names)}
 
-# Distribution of data per label in the training set
-nb_data_per_label = {str(label) : len(images) for label, images in train_map.items()}
+# Distribution of data per shard in the training set
+nb_data_per_shard = {str(shard) : len(data['y']) for shard, data in shard_data.items()}
 
 # Update datasetfile (metadata)
 if not os.path.exists("datasetfile"):
@@ -78,7 +128,7 @@ if not os.path.exists("datasetfile"):
         "nb_classes": 10,
         "dataloader": "dataloader",
         "label_map": label_map,
-        "nb_data_per_label": nb_data_per_label
+        "nb_data_per_shard": nb_data_per_shard
     }
 
     with open("datasetfile", "w") as f:

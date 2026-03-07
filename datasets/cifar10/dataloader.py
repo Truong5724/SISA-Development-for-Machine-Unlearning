@@ -20,8 +20,8 @@ y_test = test_data['y'].astype(np.int64)
 
 def load(indices, category='train', label=0):
     if category == 'train':
-        X_train = train_data[label].astype(np.float32) / 255.0
-        y_train = np.full(X_train.shape[0], label, dtype=np.int64)
+        X_train = train_data[label]['X'].astype(np.float32) / 255.0
+        y_train = train_data[label]['y'].astype(np.int64)
         return X_train[indices], y_train[indices]
     elif category == 'val':
         return X_val[indices], y_val[indices]
