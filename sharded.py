@@ -22,7 +22,7 @@ def getShardHash(container, shard, until=None):
     string_of_indices = ':'.join(indices.astype(str))
     return sha256(string_of_indices.encode()).hexdigest()
 
-def fetchShardBatch(container, shard, batch_size, dataset, class_name=0, offset=0, until=None):
+def fetchShardBatch(container, shard, batch_size, dataset, offset=0, until=None):
     '''
     Generator returning batches of points in the shard that are not in the requests
     with specified batch_size from the specified dataset
@@ -40,11 +40,10 @@ def fetchShardBatch(container, shard, batch_size, dataset, class_name=0, offset=
     while limit <= until - batch_size:
         limit += batch_size
         indices = shards[shard][limit-batch_size:limit]
-        yield dataloader.load(indices, label=class_name)
+        yield dataloader.load(indices)
     if limit < until:
         indices = shards[shard][limit:until]
-        yield dataloader.load(indices, label=class_name)
-
+        yield dataloader.load(indices)
 def fetchValBatch(dataset, batch_size):
     '''
     Generator returning batches of points from the specified val dataset

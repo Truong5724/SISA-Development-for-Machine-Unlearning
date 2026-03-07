@@ -1,3 +1,5 @@
+from cProfile import label
+
 import numpy as np
 import os
 
@@ -12,16 +14,16 @@ val_data = val_data.reshape((1,))[0]
 test_data = test_data.reshape((1,))[0]
 
 # Normalize to [0,1]
+X_train = train_data['X'].astype(np.float32) / 255.0
 X_val = val_data['X'].astype(np.float32) / 255.0
 X_test = test_data['X'].astype(np.float32) / 255.0
 
+y_train = train_data['y'].astype(np.int64)
 y_val = val_data['y'].astype(np.int64) 
 y_test = test_data['y'].astype(np.int64)
 
-def load(indices, category='train', label=0):
+def load(indices, category='train'):
     if category == 'train':
-        X_train = train_data[label]['X'].astype(np.float32) / 255.0
-        y_train = train_data[label]['y'].astype(np.int64)
         return X_train[indices], y_train[indices]
     elif category == 'val':
         return X_val[indices], y_val[indices]

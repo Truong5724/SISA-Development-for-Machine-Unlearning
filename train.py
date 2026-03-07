@@ -219,7 +219,6 @@ for shard in tqdm(range(args.shards)):
                     shard,
                     args.batch_size,
                     args.dataset,
-                    class_id,
                     until=(sl + 1) * slice_size if sl < args.slices - 1 else None,
                 ):
                     # Convert data to torch format and send to selected device.
