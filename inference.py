@@ -7,6 +7,7 @@ from sharded import fetchTestBatch
 import json
 from tqdm import tqdm
 import argparse
+import copy
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -51,15 +52,22 @@ device = torch.device(
 )  # pylint: disable=no-member
 
 model = model_lib.Model(dropout_rate=args.dropout_rate)
-model.to(device)
+
+models = []
+
+# Load model for each shard
+for shard in range(args.shards):
+    m = copy.deepcopy(model)
+    m.load_state_dict(torch.load(f"containers/{args.container}/cache/shard-{shard}.pt"))
+    m.to(device)
+    m.eval()
+    models.append(m)
 
 correct = 0
 total = 0
 
 all_preds = []
 all_labels = []
-
-model.eval()
 
 with torch.no_grad():
     for test_images, test_labels in tqdm(fetchTestBatch(args.dataset, args.batch_size)):
@@ -69,24 +77,15 @@ with torch.no_grad():
 
         batch_preds = []
 
-        for shard in range(args.shards):
-            # Load model
-            model.load_state_dict(
-                torch.load(f"containers/{args.container}/cache/shard-{shard}.pt")
-            )
-
-            outputs = model(gpu_test_images)
+        for m in models:
+            outputs = m(gpu_test_images)
             preds = torch.argmax(outputs, dim=1)
-
             batch_preds.append(preds)
 
-        # Shape (batch_size, shards)
         pred_matrix = torch.stack(batch_preds, dim=1)
 
-        # Predicted class (Pick the class which the first shard predicted as 1, if none, then -1)
         pred_class = torch.argmax(pred_matrix, dim=1)
 
-        # Detect rows with all 0 (If no shard predicted as 1, then set class to -1)
         mask = pred_matrix.sum(dim=1) == 0
         pred_class[mask] = -1
 
@@ -96,12 +95,14 @@ with torch.no_grad():
         all_preds.append(pred_class.cpu().numpy())
         all_labels.append(gpu_test_labels.cpu().numpy())
 
-acc = 100 * correct / total
-print(f"Overall accuracy: {acc:.2f}%")
-
 # Save predictions and labels for analysis
 all_preds = np.concatenate(all_preds)
 all_labels = np.concatenate(all_labels)
 
 output = np.stack((all_preds, all_labels), axis=1)
 np.save(f"containers/{args.container}/output/predictions.npy", output)
+
+acc = correct / total
+print(acc)
+
+

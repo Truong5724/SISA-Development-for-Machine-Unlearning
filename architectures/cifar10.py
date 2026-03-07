@@ -42,7 +42,7 @@ class wide_basic(nn.Module):
 
 class Model(nn.Module):
     def __init__(self, nb_classes=2, *args, **kwargs):
-        depth = 28
+        depth = 22
         widen_factor = 4
         dropout_rate = kwargs['dropout_rate'] if 'dropout_rate' in kwargs.keys() else 0.4
 

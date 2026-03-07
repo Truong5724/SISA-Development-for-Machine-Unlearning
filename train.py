@@ -80,35 +80,35 @@ model.to(device)
 # Init loss function.
 loss_fn = CrossEntropyLoss()
 
-class EarlyStopping:
-  def __init__(self, patience=10, min_delta=0, mode='max'):
-      self.patience = patience
-      self.min_delta = min_delta
-      self.mode = mode
-      self.best_score = None
-      self.counter = 0
-      self.early_stop = False
+# class EarlyStopping:
+#   def __init__(self, patience=10, min_delta=0, mode='max'):
+#       self.patience = patience
+#       self.min_delta = min_delta
+#       self.mode = mode
+#       self.best_score = None
+#       self.counter = 0
+#       self.early_stop = False
 
-  def __call__(self, metric):
-      if self.best_score is None:
-          self.best_score = metric
-          return False
+#   def __call__(self, metric):
+#       if self.best_score is None:
+#           self.best_score = metric
+#           return False
 
-      if self.mode == 'max':
-          improvement = metric - self.best_score
-      else:
-          improvement = self.best_score - metric
+#       if self.mode == 'max':
+#           improvement = metric - self.best_score
+#       else:
+#           improvement = self.best_score - metric
 
-      if improvement > self.min_delta:
-          self.best_score = metric
-          self.counter = 0
-      else:
-          self.counter += 1
+#       if improvement > self.min_delta:
+#           self.best_score = metric
+#           self.counter = 0
+#       else:
+#           self.counter += 1
 
-      if self.counter >= self.patience:
-          self.early_stop = True
+#       if self.counter >= self.patience:
+#           self.early_stop = True
 
-      return self.early_stop
+#       return self.early_stop
 
 for shard in tqdm(range(args.shards)):         
     shard_size = sizeOfShard(args.container, shard)
@@ -133,7 +133,7 @@ for shard in tqdm(range(args.shards)):
     reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=0.00001)
     
     # Init EarlyStopping
-    early_stopping = EarlyStopping(patience=10, min_delta=0.002, mode='max')
+    # early_stopping = EarlyStopping(patience=20, min_delta=0.002, mode='max')
 
     for sl in tqdm(range(args.slices)):
         # Reset learning rate for each slice.
@@ -261,9 +261,9 @@ for shard in tqdm(range(args.shards)):
                 val_acc = 100 * correct / total
                 print(f" [Epoch {epoch+1}] - Loss: {running_loss:.4f} - Val accuracy : {val_acc:.2f}%")
 
-                if early_stopping(val_acc):
-                  print("Early stopping triggered!")
-                  break
+                # if early_stopping(val_acc):
+                #   print("Early stopping triggered!")
+                #   break
 
                 # Update scheduler base on val_acc.
                 reduce_lr.step(val_acc)
