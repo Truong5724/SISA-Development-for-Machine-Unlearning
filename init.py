@@ -52,7 +52,9 @@ def build_and_save_partitions(distribution, shards, save_path):
     print(f"Created splitfile with {len(partitions)} shards at {save_path}")
 
 train_distribution = datasetfile["nb_train_data_per_shard"]
-train_partitions = build_and_save_partitions(train_distribution, shards, "containers/train_splitfile.npy")
+train_save_dir  = container_dir + "/train_splitfile.npy"
+train_partitions = build_and_save_partitions(train_distribution, shards, train_save_dir)
 
 val_distribution = datasetfile["nb_val_data_per_shard"]
-val_partitions = build_and_save_partitions(val_distribution, shards, "containers/val_splitfile.npy")
+val_save_dir = container_dir + "/val_splitfile.npy"
+val_partitions = build_and_save_partitions(val_distribution, shards, val_save_dir)

@@ -7,14 +7,14 @@ def sizeOfShard(container, shard):
     '''
     Returns the size (in number of points) of the shard.
     '''
-    shards = np.load('containers/{}/splitfile.npy'.format(container), allow_pickle=True)
+    shards = np.load('containers/{}/train_splitfile.npy'.format(container), allow_pickle=True)
     return shards[shard].shape[0]
 
 def getShardHash(container, shard, until=None):
     '''
     Returns a hash of the indices of the points in the shard lower than until (separated by :).
     '''
-    shards = np.load('containers/{}/splitfile.npy'.format(container), allow_pickle=True)
+    shards = np.load('containers/{}/train_splitfile.npy'.format(container), allow_pickle=True)
 
     if until == None:
         until = shards[shard].shape[0]
