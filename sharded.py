@@ -36,7 +36,6 @@ def fetchShardBatch(container, shard, dataset, batch_size, until=None):
     if until == None or until > shards[shard].shape[0]:
         until = shards[shard].shape[0]
 
-    # Cumulative data loading.
     limit = 0
 
     while limit <= until - batch_size:
@@ -60,8 +59,7 @@ def fetchValBatch(container, shard, dataset, batch_size, until=None):
     if until == None or until > shards[shard].shape[0]:
         until = shards[shard].shape[0]
 
-    # The first index of shards[shard].
-    limit = shards[shard][0]
+    limit = 0
 
     while limit <= until - batch_size:
         limit += batch_size

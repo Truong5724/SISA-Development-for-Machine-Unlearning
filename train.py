@@ -117,7 +117,13 @@ train_transform = transforms.Compose([
     transforms.RandomHorizontalFlip(),
 ])
 
-for shard in tqdm(range(args.shards)):         
+for shard in tqdm(range(args.shards)):  
+    if os.path.exists(
+        "containers/{}/cache/shard-{}.pt".format(args.container, shard)
+    ):
+        print(f"Recovery mode for shard {shard} - Checkpoint already exists")
+        continue
+
     shard_size = sizeOfShard(args.container, shard)
     slice_size = shard_size // args.slices
     avg_epochs_per_slice = (
