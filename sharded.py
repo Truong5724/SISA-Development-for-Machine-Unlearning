@@ -22,13 +22,13 @@ def getShardHash(container, shard, until=None):
     string_of_indices = ':'.join(indices.astype(str))
     return sha256(string_of_indices.encode()).hexdigest()
 
-def fetchShardBatch(container, shard, batch_size, dataset, offset=0, until=None):
+def fetchShardBatch(container, shard, dataset, batch_size, until=None):
     '''
     Generator returning batches of points in the shard that are not in the requests
     with specified batch_size from the specified dataset
     optionnally located between offset and until (slicing).
     '''
-    shards = np.load('containers/{}/splitfile.npy'.format(container), allow_pickle=True)
+    shards = np.load('containers/{}/train_splitfile.npy'.format(container), allow_pickle=True)
     
     with open(dataset) as f:
         datasetfile = json.loads(f.read())
@@ -36,7 +36,9 @@ def fetchShardBatch(container, shard, batch_size, dataset, offset=0, until=None)
     if until == None or until > shards[shard].shape[0]:
         until = shards[shard].shape[0]
 
-    limit = offset
+    # Cumulative data loading.
+    limit = 0
+
     while limit <= until - batch_size:
         limit += batch_size
         indices = shards[shard][limit-batch_size:limit]
@@ -44,21 +46,30 @@ def fetchShardBatch(container, shard, batch_size, dataset, offset=0, until=None)
     if limit < until:
         indices = shards[shard][limit:until]
         yield dataloader.load(indices)
-def fetchValBatch(dataset, batch_size):
+
+def fetchValBatch(container, shard, dataset, batch_size, until=None):
     '''
     Generator returning batches of points from the specified val dataset
-    with specified batch_size.
+    with specified batch_size, between offset and until.
     '''
+    shards = np.load('containers/{}/val_splitfile.npy'.format(container), allow_pickle=True)
+    
     with open(dataset) as f:
         datasetfile = json.loads(f.read())
     dataloader = importlib.import_module('.'.join(dataset.split('/')[:-1] + [datasetfile['dataloader']]))
+    if until == None or until > shards[shard].shape[0]:
+        until = shards[shard].shape[0]
 
-    limit = 0
-    while limit <= datasetfile['nb_val'] - batch_size:
+    # The first index of shards[shard].
+    limit = shards[shard][0]
+
+    while limit <= until - batch_size:
         limit += batch_size
-        yield dataloader.load(np.arange(limit - batch_size, limit), category='val')
-    if limit < datasetfile['nb_val']:
-        yield dataloader.load(np.arange(limit, datasetfile['nb_val']), category='val')
+        indices = shards[shard][limit-batch_size:limit]
+        yield dataloader.load(indices)
+    if limit < until:
+        indices = shards[shard][limit:until]
+        yield dataloader.load(indices)
 
 def fetchTestBatch(dataset, batch_size):
     '''

@@ -70,7 +70,7 @@ all_preds = []
 all_labels = []
 
 with torch.no_grad():
-    for test_images, test_labels in tqdm(fetchTestBatch(args.dataset, args.batch_size)):
+    for test_images, test_labels in fetchTestBatch(args.dataset, args.batch_size):
 
         gpu_test_images = torch.from_numpy(test_images).to(device)
         gpu_test_labels = torch.from_numpy(test_labels).to(device)

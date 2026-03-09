@@ -12,6 +12,7 @@ from time import time
 import json
 from tqdm import tqdm
 import argparse
+import torchvision.transforms as transforms
 
 parser = argparse.ArgumentParser()
 
@@ -80,35 +81,41 @@ model.to(device)
 # Init loss function.
 loss_fn = CrossEntropyLoss()
 
-# class EarlyStopping:
-#   def __init__(self, patience=10, min_delta=0, mode='max'):
-#       self.patience = patience
-#       self.min_delta = min_delta
-#       self.mode = mode
-#       self.best_score = None
-#       self.counter = 0
-#       self.early_stop = False
+class EarlyStopping:
+    def __init__(self, patience=10, min_delta=0, mode='max'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.best_score = None
+        self.counter = 0
+        self.early_stop = False
 
-#   def __call__(self, metric):
-#       if self.best_score is None:
-#           self.best_score = metric
-#           return False
+    def __call__(self, metric):
+        if self.best_score is None:
+            self.best_score = metric
+            return False
 
-#       if self.mode == 'max':
-#           improvement = metric - self.best_score
-#       else:
-#           improvement = self.best_score - metric
+        if self.mode == 'max':
+            improvement = metric - self.best_score
+        else:
+            improvement = self.best_score - metric
 
-#       if improvement > self.min_delta:
-#           self.best_score = metric
-#           self.counter = 0
-#       else:
-#           self.counter += 1
+        if improvement > self.min_delta:
+            self.best_score = metric
+            self.counter = 0
+        else:
+            self.counter += 1
 
-#       if self.counter >= self.patience:
-#           self.early_stop = True
+        if self.counter >= self.patience:
+            self.early_stop = True
 
-#       return self.early_stop
+        return self.early_stop
+
+# Augmentation config.
+train_transform = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+])
 
 for shard in tqdm(range(args.shards)):         
     shard_size = sizeOfShard(args.container, shard)
@@ -130,10 +137,10 @@ for shard in tqdm(range(args.shards)):
         raise "Unsupported optimizer"
 
     # Init ReduceLROnPlateau scheduler 
-    reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=0.00001)
+    reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-5)
     
     # Init EarlyStopping
-    # early_stopping = EarlyStopping(patience=20, min_delta=0.002, mode='max')
+    early_stopping = EarlyStopping(patience=10, min_delta=0.001, mode='max')
 
     for sl in tqdm(range(args.slices)):
         # Reset learning rate for each slice.
@@ -208,6 +215,10 @@ for shard in tqdm(range(args.shards)):
             # Actual training.
             train_time = 0.0
 
+            # Best .pt loading if early stopping trigger.
+            best_val_acc = -1
+            best_model_path = f"containers/{args.container}/cache/{slice_hash}_best.pt"
+
             for epoch in tqdm(range(start_epoch, slice_epochs)):
                 model.train()
 
@@ -217,13 +228,16 @@ for shard in tqdm(range(args.shards)):
                 for images, labels in fetchShardBatch(
                     args.container,
                     shard,
-                    args.batch_size,
                     args.dataset,
+                    args.batch_size,
                     until=(sl + 1) * slice_size if sl < args.slices - 1 else None,
                 ):
                     # Convert data to torch format and send to selected device.
                     gpu_images = torch.from_numpy(images).to(device)
                     gpu_labels = torch.from_numpy(labels).to(device)  # pylint: disable=no-member
+
+                    # Augmentation
+                    gpu_images = train_transform(gpu_images)
 
                     forward_start_time = time()
 
@@ -245,25 +259,36 @@ for shard in tqdm(range(args.shards)):
                 total = 0
 
                 with torch.no_grad():  
-                    for val_images, val_labels in fetchValBatch(args.dataset, args.batch_size):
+                    for val_images, val_labels in fetchValBatch(
+                        args.container, 
+                        shard, 
+                        args.dataset, 
+                        args.batch_size
+                    ):
                         gpu_val_images = torch.from_numpy(val_images).to(device)
                         gpu_val_labels = torch.from_numpy(val_labels).to(device)
-
-                        # Convert to Yes/No labels
-                        binary_labels = (gpu_val_labels == class_id).long()
 
                         outputs = model(gpu_val_images)
                         preds = torch.argmax(outputs, dim=1)
 
-                        correct += (preds == binary_labels).sum().item()
-                        total += binary_labels.size(0)
+                        correct += (preds == gpu_val_labels).sum().item()
+                        total += gpu_val_labels.size(0)
 
                 val_acc = 100 * correct / total
                 print(f" [Epoch {epoch+1}] - Loss: {running_loss:.4f} - Val accuracy : {val_acc:.2f}%")
 
-                # if early_stopping(val_acc):
-                #   print("Early stopping triggered!")
-                #   break
+                if val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    torch.save(model.state_dict(), best_model_path)
+
+                if early_stopping(val_acc):
+                    print("Early stopping triggered!")
+                    
+                    # Load best .pt
+                    if os.path.exists(best_model_path):
+                        model.load_state_dict(torch.load(best_model_path))
+                        print("Loaded best model checkpoint")
+                    break
 
                 # Update scheduler base on val_acc.
                 reduce_lr.step(val_acc)

@@ -38,17 +38,21 @@ shards = args.shards
 if not shards == nb_classes:
     raise ValueError(f"Requested {shards} shards but dataset only has {nb_classes} classes")
 
-# Build partition: each shard contains indices for a single class
-data_distribution = datasetfile["nb_data_per_shard"]
-partitions = []
-start = 0
+# Build partition: each shard contains indices for a single class (for train and val)
+def build_and_save_partitions(distribution, shards, save_path):
+    partitions = []
+    start = 0
 
-for shard in range(shards):
-    partitions.append(np.arange(start, start + data_distribution[str(shard)]))
-    start += data_distribution[str(shard)]
+    for shard in range(shards):
+        size = distribution[str(shard)]
+        partitions.append(np.arange(start, start + size))
+        start += size
 
-# Save splitfile
-split_path = os.path.join(container_dir, "splitfile.npy")
-np.save(split_path, partitions)
-print(f"Created splitfile with {len(partitions)} shards at {split_path}")
+    np.save(save_path, partitions)
+    print(f"Created splitfile with {len(partitions)} shards at {save_path}")
 
+train_distribution = datasetfile["nb_train_data_per_shard"]
+train_partitions = build_and_save_partitions(train_distribution, shards, "containers/train_splitfile.npy")
+
+val_distribution = datasetfile["nb_val_data_per_shard"]
+val_partitions = build_and_save_partitions(val_distribution, shards, "containers/val_splitfile.npy")
