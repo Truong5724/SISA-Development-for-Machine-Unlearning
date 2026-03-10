@@ -81,10 +81,6 @@ with torch.no_grad():
 
         max_prob, pred_class = torch.max(score_matrix, dim=1)
 
-        # If the max probability is below 0.5, we consider it as uncertain and assign a special class -1.
-        mask = max_prob < 0.5
-        pred_class[mask] = -1
-
         correct += (pred_class == gpu_test_labels).sum().item()
         total += gpu_test_labels.size(0)
 
