@@ -9,7 +9,6 @@ from sharded import sizeOfShard, getShardHash, fetchShardBatch, fetchValBatch
 import os
 from glob import glob
 from time import time
-import json
 from tqdm import tqdm
 import argparse
 import torchvision.transforms as transforms
@@ -75,9 +74,6 @@ device = torch.device(
     "cuda:0" if torch.cuda.is_available() else "cpu"
 )  # pylint: disable=no-member
 
-model = model_lib.Model(dropout_rate=args.dropout_rate)
-model.to(device)
-
 # Init loss function.
 loss_fn = CrossEntropyLoss()
 
@@ -118,11 +114,13 @@ train_transform = transforms.Compose([
 ])
 
 for shard in tqdm(range(args.shards)):  
-    if os.path.exists(
-        "containers/{}/cache/shard-{}.pt".format(args.container, shard)
-    ):
+    # Check if shard checkpoint already exists, if yes skip to next shard.
+    if os.path.exists("containers/{}/cache/shard-{}.pt".format(args.container, shard)):
         print(f"Recovery mode for shard {shard} - Checkpoint already exists")
         continue
+
+    model = model_lib.Model(dropout_rate=args.dropout_rate)
+    model.to(device)
 
     shard_size = sizeOfShard(args.container, shard)
     slice_size = shard_size // args.slices
@@ -142,16 +140,16 @@ for shard in tqdm(range(args.shards)):
     else:
         raise "Unsupported optimizer"
 
-    # Init ReduceLROnPlateau scheduler 
-    reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-5)
-    
-    # Init EarlyStopping
-    early_stopping = EarlyStopping(patience=10, min_delta=0.001, mode='max')
-
     for sl in tqdm(range(args.slices)):
         # Reset learning rate for each slice.
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
+
+        # Init ReduceLROnPlateau scheduler 
+        reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-5)
+
+        # Init EarlyStopping
+        early_stopping = EarlyStopping(patience=20, min_delta=0.001, mode='max')
 
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
@@ -239,11 +237,15 @@ for shard in tqdm(range(args.shards)):
                     until=(sl + 1) * slice_size if sl < args.slices - 1 else None,
                 ):
                     # Convert data to torch format and send to selected device.
-                    gpu_images = torch.from_numpy(images).to(device)
-                    gpu_labels = torch.from_numpy(labels).to(device)  # pylint: disable=no-member
+                    images = torch.from_numpy(images)
 
-                    # Augmentation
-                    gpu_images = train_transform(gpu_images)
+                    images = torch.stack([
+                        train_transform(img)
+                        for img in images
+                    ])
+
+                    gpu_images = images.to(device)
+                    gpu_labels = torch.from_numpy(labels).to(device)
 
                     forward_start_time = time()
 

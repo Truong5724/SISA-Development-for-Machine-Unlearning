@@ -48,8 +48,6 @@ def create_label_map(X, y):
     sorted_map = {key: label_map[key] for key in sorted(label_map)}
     return sorted_map
 
-
-
 # For each shard we want the number of positive and negative data are the same (not bias), either in train or test set.
 # Consequently, val sets for each shard will likely be different with each others.
 def build_binary_shards(label_map):

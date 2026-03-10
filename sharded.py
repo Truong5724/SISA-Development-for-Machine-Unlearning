@@ -64,10 +64,10 @@ def fetchValBatch(container, shard, dataset, batch_size, until=None):
     while limit <= until - batch_size:
         limit += batch_size
         indices = shards[shard][limit-batch_size:limit]
-        yield dataloader.load(indices)
+        yield dataloader.load(indices, category='val')
     if limit < until:
         indices = shards[shard][limit:until]
-        yield dataloader.load(indices)
+        yield dataloader.load(indices, category='val')
 
 def fetchTestBatch(dataset, batch_size):
     '''

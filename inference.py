@@ -1,11 +1,6 @@
 import numpy as np
 import torch
-import torch.nn.functional as F
-
 from sharded import fetchTestBatch
-
-import json
-from tqdm import tqdm
 import argparse
 import copy
 
@@ -75,18 +70,19 @@ with torch.no_grad():
         gpu_test_images = torch.from_numpy(test_images).to(device)
         gpu_test_labels = torch.from_numpy(test_labels).to(device)
 
-        batch_preds = []
+        scores = []
 
         for m in models:
             outputs = m(gpu_test_images)
-            preds = torch.argmax(outputs, dim=1)
-            batch_preds.append(preds)
+            prob = torch.softmax(outputs, dim=1)[:, 1] # Softmax for class 1 - positive.
+            scores.append(prob)
 
-        pred_matrix = torch.stack(batch_preds, dim=1)
+        score_matrix = torch.stack(scores, dim=1)
 
-        pred_class = torch.argmax(pred_matrix, dim=1)
+        max_prob, pred_class = torch.max(score_matrix, dim=1)
 
-        mask = pred_matrix.sum(dim=1) == 0
+        # If the max probability is below 0.5, we consider it as uncertain and assign a special class -1.
+        mask = max_prob < 0.5
         pred_class[mask] = -1
 
         correct += (pred_class == gpu_test_labels).sum().item()
