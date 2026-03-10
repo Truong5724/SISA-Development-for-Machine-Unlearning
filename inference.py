@@ -35,6 +35,14 @@ parser.add_argument(
     help="Location of the datasetfile, default datasets/purchase/datasetfile",
 )
 
+parser.add_argument(
+    "--unlearn_shards",
+    nargs="*",
+    type=int,
+    default=[],
+    help="List of shard IDs to ignore during inference"
+)
+
 args = parser.parse_args()
 
 # Import the architecture.
@@ -66,6 +74,14 @@ all_labels = []
 
 with torch.no_grad():
     for test_images, test_labels in fetchTestBatch(args.dataset, args.batch_size):
+        # Filter data (images and labels) based on unlearn_shards.
+        mask = ~np.isin(test_labels, args.unlearn_shards)
+
+        test_images = test_images[mask]
+        test_labels = test_labels[mask]
+
+        if len(test_labels) == 0:
+            continue
 
         gpu_test_images = torch.from_numpy(test_images).to(device)
         gpu_test_labels = torch.from_numpy(test_labels).to(device)
