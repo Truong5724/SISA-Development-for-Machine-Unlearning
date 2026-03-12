@@ -22,6 +22,10 @@ args = parser.parse_args()
 
 # Make sure container directory structure exists
 container_dir = os.path.join("containers", args.container)
+
+if not os.path.isdir(container_dir):
+    os.makedirs(container_dir, exist_ok=True)
+
 for sub in ("cache", "output", "times"):
     path = os.path.join(container_dir, sub)
     if not os.path.isdir(path):

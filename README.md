@@ -17,6 +17,35 @@ that underpin our implementation.
 > Bourtoule, L., Chandrasekaran, V., Choquette-Choo, C., Jia, H., Travers, A., Zhang, B., Lie, D., & Papernot, N. (2021). *Machine Unlearning*. Proceedings of
 the 42nd IEEE Symposium on Security and Privacy.
 
+## Running the Experiment
 
+Follow the steps below to run the pipeline.
 
+### 1. Download the dataset
+```bash
+cd datasets/cifar10
+python download.py
+```
 
+### 2. Prepare the data
+```bash
+python prepare_data.py
+```
+
+### 3. Create splitfile and container
+```bash
+(cd ../.. first)
+bash scripts/cifar10-sharding/init.sh
+```
+
+### 4. Train the model
+```bash
+bash scripts/cifar10-sharding/train.sh
+```
+
+### 5. Run inference
+```bash
+bash scripts/cifar10-sharding/inference.sh
+``` 
+
+Note: You can modify the input arguments inside the `.sh` scripts to customize the experiment settings.
