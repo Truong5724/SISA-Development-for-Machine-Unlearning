@@ -34,7 +34,7 @@ python prepare_data.py
 
 ### 3. Create splitfile and container
 ```bash
-(cd ../.. first)
+# Run `cd ../..` first if you are not in the project root directory.
 bash scripts/cifar10-sharding/init.sh
 ```
 
@@ -48,4 +48,4 @@ bash scripts/cifar10-sharding/train.sh
 bash scripts/cifar10-sharding/inference.sh
 ``` 
 
-Note: You can modify the input arguments inside the `.sh` scripts to customize the experiment settings.
+**Note:** You can modify the input arguments inside the `.sh` scripts to customize the experiment settings.
