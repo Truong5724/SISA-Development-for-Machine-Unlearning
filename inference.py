@@ -3,6 +3,7 @@ import torch
 from sharded import fetchTestBatch
 import argparse
 import copy
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -66,9 +67,6 @@ for shard in range(args.shards):
     m.eval()
     models.append(m)
 
-correct = 0
-total = 0
-
 all_preds = []
 all_labels = []
 
@@ -97,9 +95,6 @@ with torch.no_grad():
 
         max_prob, pred_class = torch.max(score_matrix, dim=1)
 
-        correct += (pred_class == gpu_test_labels).sum().item()
-        total += gpu_test_labels.size(0)
-
         all_preds.append(pred_class.cpu().numpy())
         all_labels.append(gpu_test_labels.cpu().numpy())
 
@@ -110,7 +105,16 @@ all_labels = np.concatenate(all_labels)
 output = np.stack((all_preds, all_labels), axis=1)
 np.save(f"containers/{args.container}/output/predictions.npy", output)
 
-acc = correct / total
-print(acc)
+# Confusion matrix
+cm = confusion_matrix(all_labels, all_preds)
+print("Confusion Matrix:")
+print(cm)
 
+# Metrics (Accuracy, Precision, Recall, F1-score) 
+acc = accuracy_score(all_labels, all_preds)
+precision_macro = precision_score(all_labels, all_preds, average="macro", zero_division=0)
+recall_macro = recall_score(all_labels, all_preds, average="macro", zero_division=0)
+f1_macro = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+
+print(f"{acc:.4f},{precision_macro:.4f},{recall_macro:.4f},{f1_macro:.4f}")
 
