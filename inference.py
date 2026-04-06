@@ -3,7 +3,7 @@ import torch
 from sharded import fetchTestBatch
 import argparse
 import copy
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -72,22 +72,18 @@ all_labels = []
 
 with torch.no_grad():
     for test_images, test_labels in fetchTestBatch(args.dataset, args.batch_size):
-        # Filter data (images and labels) based on unlearn_shards.
-        mask = ~np.isin(test_labels, args.unlearn_shards)
-
-        test_images = test_images[mask]
-        test_labels = test_labels[mask]
-
-        if len(test_labels) == 0:
-            continue
-
         gpu_test_images = torch.from_numpy(test_images).to(device)
         gpu_test_labels = torch.from_numpy(test_labels).to(device)
 
         scores = []
 
-        for m in models:
-            outputs = m(gpu_test_images)
+        for i, model in enumerate(models):
+            # If the shard is in the unlearn list, append a tensor of -1s to indicate no prediction for this shard.
+            if i in args.unlearn_shards:
+                scores.append(torch.full(gpu_test_labels.shape[0], -1, device=device))  
+                continue
+
+            outputs = model(gpu_test_images)
             prob = torch.softmax(outputs, dim=1)[:, 1] # Softmax for class 1 - positive.
             scores.append(prob)
 
@@ -105,16 +101,23 @@ all_labels = np.concatenate(all_labels)
 output = np.stack((all_preds, all_labels), axis=1)
 np.save(f"containers/{args.container}/output/predictions.npy", output)
 
-# Confusion matrix
-cm = confusion_matrix(all_labels, all_preds)
-print("Confusion Matrix:")
-print(cm)
+# Filter data based on unlearn_shards.
+mask = np.isin(all_labels, args.unlearn_shards)
 
-# Metrics (Accuracy, Precision, Recall, F1-score) 
-acc = accuracy_score(all_labels, all_preds)
-precision_macro = precision_score(all_labels, all_preds, average="macro", zero_division=0)
-recall_macro = recall_score(all_labels, all_preds, average="macro", zero_division=0)
-f1_macro = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+retained_preds = all_preds[~mask]
+retained_labels = all_labels[~mask]
 
-print(f"{acc:.4f},{precision_macro:.4f},{recall_macro:.4f},{f1_macro:.4f}")
+unlearned_preds = all_preds[mask]
+unlearned_labels = all_labels[mask]
+
+# Accuracy for retained and unlearned data
+retained_acc = accuracy_score(retained_labels, retained_preds)
+unlearn_acc = accuracy_score(unlearned_labels, unlearned_preds)
+
+# Macro-averaged precision, recall, and f1-score for the retained data
+retained_precision_macro = precision_score(retained_labels, retained_preds, average="macro", zero_division=0)
+retained_recall_macro = recall_score(retained_labels, retained_preds, average="macro", zero_division=0)
+retained_f1_macro = f1_score(retained_labels, retained_preds, average="macro", zero_division=0)
+
+print(f"{retained_acc:.4f}, {unlearn_acc:.4f}, {retained_precision_macro:.4f}, {retained_recall_macro:.4f}, {retained_f1_macro:.4f}")
 
