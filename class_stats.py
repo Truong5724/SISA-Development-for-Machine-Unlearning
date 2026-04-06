@@ -28,7 +28,7 @@ plt.xlabel("Predicted label")
 plt.ylabel("True label")
 
 plt.tight_layout()
-plt.show()
+plt.savefig(f"cm_{args.container}.png")
 
 # Per-class metrics
 precision = precision_score(all_labels, all_preds, average=None, zero_division=0)

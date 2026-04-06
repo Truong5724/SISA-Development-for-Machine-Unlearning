@@ -12,17 +12,17 @@ slices=3
 ### Uncomment the case depending on the experiment you want to run.
 
 ### Inference without unlearning.
-metric=$(python inference.py --model cifar10 --shards 10 --slices ${slices} --dataset datasets/cifar10/datasetfile --batch_size 64 --dropout_rate 0.2 --container "cifar10" | tail -n 1)
+metric=$(python inference.py --model cifar10 --shards 10 --slices ${slices} --dataset datasets/cifar10/datasetfile --batch_size 64 --dropout_rate 0.3 --container "cifar10" | tail -n 1)
 
 
 ### Unlearning one shard at a time.
 # forgot_shards=($(shuf -i 0-9 -n 1))
-# metric=$(python inference.py --model cifar10 --shards 10 --slices ${slices} --dataset datasets/cifar10/datasetfile --batch_size 64 --dropout_rate 0.2 --container "cifar10" --unlearn_shards $forgot_shards | tail -n 1)
+# metric=$(python inference.py --model cifar10 --shards 10 --slices ${slices} --dataset datasets/cifar10/datasetfile --batch_size 64 --dropout_rate 0.3 --container "cifar10" --unlearn_shards "${forgot_shards[@]}" | tail -n 1)
 
 
 ### Unlearning n shards at a time (Modify `n` to meet your needs).
 # forgot_shards=($(shuf -i 0-9 -n 4))
-# metric=$(python inference.py --model cifar10 --shards 10 --slices ${slices} --dataset datasets/cifar10/datasetfile --batch_size 64 --dropout_rate 0.2 --container "cifar10" --unlearn_shards $forgot_shards | tail -n 1)
+# metric=$(python inference.py --model cifar10 --shards 10 --slices ${slices} --dataset datasets/cifar10/datasetfile --batch_size 64 --dropout_rate 0.3 --container "cifar10" --unlearn_shards "${forgot_shards[@]}" | tail -n 1)
 
 
 cat containers/cifar10/times/shard-*.time > "containers/cifar10/times/times.tmp"
@@ -35,4 +35,4 @@ python class_stats.py --container "cifar10"
 echo "10,${slices},None,${metric},${time}" >> cifar10-general-report.csv
 
 # Use for unlearning case
-# echo "10,${slices},\"[$(IFS=,; echo "${forgot_shards[*]}")]\",${acc},${time}" >> cifar10-general-report.csv
+# echo "10,${slices},\"[$(IFS=,; echo "${forgot_shards[*]}")]\",${metric},${time}" >> cifar10-general-report.csv

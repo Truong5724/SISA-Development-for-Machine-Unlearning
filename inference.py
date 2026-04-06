@@ -80,7 +80,7 @@ with torch.no_grad():
         for i, model in enumerate(models):
             # If the shard is in the unlearn list, append a tensor of -1s to indicate no prediction for this shard.
             if i in args.unlearn_shards:
-                scores.append(torch.full(gpu_test_labels.shape[0], -1, device=device))  
+                scores.append(torch.full((gpu_test_labels.shape[0],), -1, device=device))  
                 continue
 
             outputs = model(gpu_test_images)
@@ -104,15 +104,19 @@ np.save(f"containers/{args.container}/output/predictions.npy", output)
 # Filter data based on unlearn_shards.
 mask = np.isin(all_labels, args.unlearn_shards)
 
-retained_preds = all_preds[~mask]
-retained_labels = all_labels[~mask]
-
 unlearned_preds = all_preds[mask]
 unlearned_labels = all_labels[mask]
 
+retained_preds = all_preds[~mask]
+retained_labels = all_labels[~mask]
+
 # Accuracy for retained and unlearned data
 retained_acc = accuracy_score(retained_labels, retained_preds)
-unlearn_acc = accuracy_score(unlearned_labels, unlearned_preds)
+unlearn_acc = (
+    accuracy_score(unlearned_labels, unlearned_preds)
+    if len(unlearned_labels) > 0
+    else -1
+)
 
 # Macro-averaged precision, recall, and f1-score for the retained data
 retained_precision_macro = precision_score(retained_labels, retained_preds, average="macro", zero_division=0)
