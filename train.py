@@ -149,7 +149,7 @@ for shard in tqdm(range(args.shards)):
         reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-5)
 
         # Init EarlyStopping
-        early_stopping = EarlyStopping(patience=20, min_delta=0.001, mode='max')
+        # early_stopping = EarlyStopping(patience=20, min_delta=0.001, mode='max')
 
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
@@ -220,8 +220,8 @@ for shard in tqdm(range(args.shards)):
             train_time = 0.0
 
             # Best .pt loading if early stopping trigger.
-            best_val_acc = -1
-            best_model_path = f"containers/{args.container}/cache/{slice_hash}_best.pt"
+            # best_val_acc = -1
+            # best_model_path = f"containers/{args.container}/cache/{slice_hash}_best.pt"
 
             for epoch in tqdm(range(start_epoch, slice_epochs)):
                 model.train()
@@ -285,18 +285,18 @@ for shard in tqdm(range(args.shards)):
                 val_acc = 100 * correct / total
                 print(f" [Epoch {epoch+1}] - Loss: {running_loss:.4f} - Val accuracy : {val_acc:.2f}%")
 
-                if val_acc > best_val_acc:
-                    best_val_acc = val_acc
-                    torch.save(model.state_dict(), best_model_path)
+                # if val_acc > best_val_acc:
+                #     best_val_acc = val_acc
+                #     torch.save(model.state_dict(), best_model_path)
 
-                if early_stopping(val_acc):
-                    print("Early stopping triggered!")
+                # if early_stopping(val_acc):
+                #     print("Early stopping triggered!")
                     
-                    # Load best .pt
-                    if os.path.exists(best_model_path):
-                        model.load_state_dict(torch.load(best_model_path))
-                        print("Loaded best model checkpoint")
-                    break
+                #     # Load best .pt instead of last .pt
+                #     if os.path.exists(best_model_path):
+                #         model.load_state_dict(torch.load(best_model_path))
+                #         print("Loaded best model checkpoint")
+                #     break
 
                 # Update scheduler base on val_acc.
                 reduce_lr.step(val_acc)
