@@ -138,10 +138,16 @@ for shard in tqdm(range(args.shards)):
             raise "Unsupported optimizer"
 
         # Init ReduceLROnPlateau scheduler 
-        reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-5)
+        reduce_lr = ReduceLROnPlateau(optimizer, 
+                                      mode='max', 
+                                      factor=0.5, 
+                                      patience=5, 
+                                      min_lr=1e-5, 
+                                      threshold=0.002, 
+                                      threshold_mode='abs')
 
         # Init EarlyStopping
-        early_stopping = EarlyStopping(patience=20, min_delta=0.001, mode='max')
+        early_stopping = EarlyStopping(patience=20, min_delta=0.002, mode='max')
 
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
