@@ -124,32 +124,24 @@ for shard in tqdm(range(args.shards)):
 
     shard_size = sizeOfShard(args.container, shard)
     slice_size = shard_size // args.slices
-    avg_epochs_per_slice = (
-        2 * args.slices / (args.slices + 1) * args.epochs / args.slices
-    )
+    avg_epochs_per_slice = args.epochs 
+    
     loaded = False
 
-    # We assume that shard n contain data of class n
-    class_id = shard
-
-    # Instantiate optimizer
-    if args.optimizer == "adam":
-        optimizer = Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
-    elif args.optimizer == "sgd":
-        optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4, nesterov=True)
-    else:
-        raise "Unsupported optimizer"
-
     for sl in tqdm(range(args.slices)):
-        # Reset learning rate for each slice.
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = args.learning_rate
+        # Instantiate optimizer
+        if args.optimizer == "adam":
+            optimizer = Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
+        elif args.optimizer == "sgd":
+            optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        else:
+            raise "Unsupported optimizer"
 
         # Init ReduceLROnPlateau scheduler 
         reduce_lr = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-5)
 
         # Init EarlyStopping
-        # early_stopping = EarlyStopping(patience=20, min_delta=0.001, mode='max')
+        early_stopping = EarlyStopping(patience=20, min_delta=0.001, mode='max')
 
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
@@ -211,17 +203,12 @@ for shard in tqdm(range(args.shards)):
                 # Mark model as loaded for next slices.
                 loaded = True
             
-            ### CẦN TỐI ƯU
             # If this is the first slice, no need to load anything.
             elif sl == 0:
                 loaded = True
 
             # Actual training.
             train_time = 0.0
-
-            # Best .pt loading if early stopping trigger.
-            # best_val_acc = -1
-            # best_model_path = f"containers/{args.container}/cache/{slice_hash}_best.pt"
 
             for epoch in tqdm(range(start_epoch, slice_epochs)):
                 model.train()
@@ -285,18 +272,10 @@ for shard in tqdm(range(args.shards)):
                 val_acc = 100 * correct / total
                 print(f" [Epoch {epoch+1}] - Loss: {running_loss:.4f} - Val accuracy : {val_acc:.2f}%")
 
-                # if val_acc > best_val_acc:
-                #     best_val_acc = val_acc
-                #     torch.save(model.state_dict(), best_model_path)
-
-                # if early_stopping(val_acc):
-                #     print("Early stopping triggered!")
-                    
-                #     # Load best .pt instead of last .pt
-                #     if os.path.exists(best_model_path):
-                #         model.load_state_dict(torch.load(best_model_path))
-                #         print("Loaded best model checkpoint")
-                #     break
+                # Check early stopping
+                if early_stopping(val_acc):
+                    print("Early stopping triggered!")
+                    break
 
                 # Update scheduler base on val_acc.
                 reduce_lr.step(val_acc)
@@ -355,7 +334,6 @@ for shard in tqdm(range(args.shards)):
             ) as f:
                 f.write("{}\n".format(train_time + elapsed_time))
 
-            ### CẦN TỐI ƯU
             # Remove previous checkpoint.
             if os.path.exists(
                 "containers/{}/cache/{}_{}.pt".format(
