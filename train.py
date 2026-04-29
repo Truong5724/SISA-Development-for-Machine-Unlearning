@@ -139,15 +139,13 @@ for shard in tqdm(range(args.shards)):
 
         # Init ReduceLROnPlateau scheduler 
         reduce_lr = ReduceLROnPlateau(optimizer, 
-                                      mode='max', 
+                                      mode='min', 
                                       factor=0.5, 
-                                      patience=5, 
-                                      min_lr=1e-5, 
-                                      threshold=0.002, 
-                                      threshold_mode='abs')
+                                      patience=3, 
+                                      min_lr=1e-5)
 
         # Init EarlyStopping
-        early_stopping = EarlyStopping(patience=20, min_delta=0.002, mode='max')
+        early_stopping = EarlyStopping(patience=20, min_delta=0.002, mode='min')
 
         # Get slice hash using sharded lib.
         slice_hash = getShardHash(
@@ -217,10 +215,13 @@ for shard in tqdm(range(args.shards)):
             train_time = 0.0
 
             for epoch in tqdm(range(start_epoch, slice_epochs)):
+                # ===== TRAINING =====
                 model.train()
 
+                train_loss = 0.0
+                train_batches = 0
+
                 epoch_start_time = time()
-                running_loss = 0.0
 
                 for images, labels in fetchShardBatch(
                     args.container,
@@ -251,13 +252,21 @@ for shard in tqdm(range(args.shards)):
                     optimizer.step()
 
                     train_time += time() - forward_start_time
-                    running_loss += loss.item()
+
+                    # Calculate train loss for the epoch.
+                    train_loss += loss.item()
+                    train_batches += 1
+
+                train_loss /= train_batches
 
                 # ===== VALIDATION =====
                 model.eval()   
 
                 correct = 0
                 total = 0
+
+                val_loss = 0.0
+                val_batches = 0
 
                 with torch.no_grad():  
                     for val_images, val_labels in fetchValBatch(
@@ -272,19 +281,25 @@ for shard in tqdm(range(args.shards)):
                         outputs = model(gpu_val_images)
                         preds = torch.argmax(outputs, dim=1)
 
+                        # Calculate validation loss for the epoch.
+                        val_loss += loss.item()
+                        val_batches += 1
+
+                        # Calculate validation accuracy for the epoch.
                         correct += (preds == gpu_val_labels).sum().item()
                         total += gpu_val_labels.size(0)
 
+                val_loss /= val_batches
                 val_acc = 100 * correct / total
-                print(f" [Epoch {epoch+1}] - Loss: {running_loss:.4f} - Val accuracy : {val_acc:.2f}%")
+                print(f" [Epoch {epoch+1}] - Train loss: {train_loss:.4f} - Val loss: {val_loss:.4f} - Val accuracy : {val_acc:.2f}%")
 
                 # Check early stopping
-                if early_stopping(val_acc):
+                if early_stopping(val_loss):
                     print("Early stopping triggered!")
                     break
 
                 # Update scheduler base on val_acc.
-                reduce_lr.step(val_acc)
+                reduce_lr.step(val_loss)
 
                 # Create a checkpoint every chkpt_interval.
                 if (
