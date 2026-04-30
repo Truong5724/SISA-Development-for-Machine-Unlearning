@@ -7,6 +7,14 @@ import seaborn as sns
 parser = argparse.ArgumentParser()
 parser.add_argument("--container", help="Name of the container")
 
+parser.add_argument(
+    "--unlearn_shards",
+    nargs="*",
+    type=int,
+    default=[],
+    help="List of shard IDs to ignore during inference"
+)
+
 args = parser.parse_args()
 
 # Load file
@@ -28,7 +36,14 @@ plt.xlabel("Predicted label")
 plt.ylabel("True label")
 
 plt.tight_layout()
-plt.savefig(f"cm_{args.container}.png")
+
+# Build filename suffix
+if args.unlearn_shards:
+    suffix = ",".join(map(str, args.unlearn_shards))
+else:
+    suffix = "none"
+    
+plt.savefig(f"containers/{args.container}/output/cm_unlearned_{suffix}.png")
 
 # Per-class metrics
 precision = precision_score(all_labels, all_preds, average=None, zero_division=0)

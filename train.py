@@ -141,7 +141,7 @@ for shard in tqdm(range(args.shards)):
         reduce_lr = ReduceLROnPlateau(optimizer, 
                                       mode='min', 
                                       factor=0.5, 
-                                      patience=3, 
+                                      patience=5, 
                                       min_lr=1e-5)
 
         # Init EarlyStopping
