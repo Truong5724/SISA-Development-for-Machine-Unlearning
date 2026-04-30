@@ -29,9 +29,12 @@ echo "10,${slices},None,${metric},${time}" >> cifar10-general-report.csv
 ### Unlearning shards
 cases=(
     "0"
-    "1 2"
-    "3 4 5"
-    "6 7 8 9"
+    "3"
+    "5"
+    "0 3 8"
+    "1 6 9"
+    "2 4 7"
+    "0 3 5 8 9"
 )
 
 for case in "${cases[@]}"
