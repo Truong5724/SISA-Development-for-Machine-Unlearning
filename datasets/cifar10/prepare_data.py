@@ -31,7 +31,7 @@ train_labels = np.concatenate(train_labels, axis=0) # (50000, )
 test_images, test_labels = load_cifar_batch(f"cifar-10-batches-py/test_batch")
 
 # Split train set into train and val sets (90% train, 10% val)
-X_train, X_val, y_train, y_val = train_test_split(train_images, train_labels, test_size=0.1, stratify=train_labels)
+X_train, X_val, y_train, y_val = train_test_split(train_images, train_labels, test_size=0.1, random_state=1, stratify=train_labels)
 
 # Build and save a label-wise map for the training set
 def create_label_map(X, y):
