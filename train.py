@@ -11,15 +11,18 @@ from glob import glob
 from time import time
 from tqdm import tqdm
 import argparse
+import random
 import torchvision.transforms as transforms
 
-SEED = 1
-
-np.random.seed(SEED)
-
-torch.use_deterministic_algorithms(True)
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
 parser = argparse.ArgumentParser()
 
@@ -126,11 +129,8 @@ for shard in tqdm(range(args.shards)):
     if os.path.exists("containers/{}/cache/shard-{}.pt".format(args.container, shard)):
         print(f"Recovery mode for shard {shard} - Checkpoint already exists")
         continue
-
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED)
-
+    
+    set_seed(1)
     model = model_lib.Model(dropout_rate=args.dropout_rate)
     model.to(device)
 
@@ -141,6 +141,8 @@ for shard in tqdm(range(args.shards)):
     loaded = False
 
     for sl in tqdm(range(args.slices)):
+        set_seed((sl + 1) * 100)
+        
         # Instantiate optimizer
         if args.optimizer == "adam":
             optimizer = Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
@@ -165,9 +167,12 @@ for shard in tqdm(range(args.shards)):
         )
 
         # If checkpoints exists, skip the slice.
-        if not os.path.exists(
+        if os.path.exists(
             "containers/{}/cache/{}.pt".format(args.container, slice_hash)
         ):
+            print("Recovering shard {} on slice {}".format(shard, sl))
+
+        else:
             # Initialize state.
             elapsed_time = 0
             start_epoch = 0
@@ -407,7 +412,7 @@ for shard in tqdm(range(args.shards)):
                     ),
                 )
 
-        elif sl == args.slices - 1:
+        if sl == args.slices - 1:
             os.symlink(
                 "{}.pt".format(slice_hash),
                 "containers/{}/cache/shard-{}.pt".format(
