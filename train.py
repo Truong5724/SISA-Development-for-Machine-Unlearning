@@ -13,6 +13,14 @@ from tqdm import tqdm
 import argparse
 import torchvision.transforms as transforms
 
+SEED = 1
+
+np.random.seed(SEED)
+
+torch.use_deterministic_algorithms(True)
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
@@ -119,7 +127,10 @@ for shard in tqdm(range(args.shards)):
         print(f"Recovery mode for shard {shard} - Checkpoint already exists")
         continue
 
-    torch.manual_seed(1)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+
     model = model_lib.Model(dropout_rate=args.dropout_rate)
     model.to(device)
 
@@ -283,6 +294,8 @@ for shard in tqdm(range(args.shards)):
                         preds = torch.argmax(outputs, dim=1)
 
                         # Calculate validation loss for the epoch.
+                        loss = loss_fn(outputs, gpu_val_labels)
+
                         val_loss += loss.item()
                         val_batches += 1
 
