@@ -119,6 +119,7 @@ for shard in tqdm(range(args.shards)):
         print(f"Recovery mode for shard {shard} - Checkpoint already exists")
         continue
 
+    torch.manual_seed(1)
     model = model_lib.Model(dropout_rate=args.dropout_rate)
     model.to(device)
 
