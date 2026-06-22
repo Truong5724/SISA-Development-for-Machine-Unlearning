@@ -125,7 +125,7 @@ train_transform = transforms.Compose([
 ])
 
 for shard in tqdm(range(args.shards)):  
-    # Check if shard checkpoint already exists, if yes skip to next shard.
+    # If shard checkpoint already exists, skip to next shard.
     if os.path.exists("containers/{}/cache/shard-{}.pt".format(args.container, shard)):
         print(f"Recovery mode for shard {shard} - Checkpoint already exists")
         continue
@@ -142,6 +142,71 @@ for shard in tqdm(range(args.shards)):
 
     for sl in tqdm(range(args.slices)):
         set_seed((sl + 1) * 100)
+
+        # Get slice hash using sharded lib.
+        slice_hash = getShardHash(
+            args.container, shard, until=(sl + 1) * slice_size
+        )
+
+        # Initialize state.
+        elapsed_time = 0
+        start_epoch = 0
+        slice_epochs = int((sl + 1) * avg_epochs_per_slice) - int(
+            sl * avg_epochs_per_slice
+        )
+
+        # If weights are already in memory (from previous slice), skip loading.
+        if not loaded:
+            # Look for a recovery checkpoint for the slice.
+            recovery_list = glob(
+                "containers/{}/cache/{}_*.pt".format(args.container, slice_hash)
+            )
+            if len(recovery_list) > 0:
+                print(
+                    "Recovery mode for shard {} on slice {}".format(args.shard, sl)
+                )
+
+                # Load weights.
+                model.load_state_dict(torch.load(recovery_list[0]))
+                start_epoch = int(
+                    recovery_list[0].split("/")[-1].split(".")[0].split("_")[1]
+                )
+
+                # Load time
+                with open(
+                    "containers/{}/times/{}_{}.time".format(
+                        args.container, slice_hash, start_epoch
+                    ),
+                    "r",
+                ) as f:
+                    elapsed_time = float(f.read())
+
+            else:
+                # If model weights of the slice exist, skip the slice.
+                if os.path.exists(
+                    "containers/{}/cache/{}.pt".format(args.container, slice_hash)
+                ):
+                    print("Model weights for shard {} on slice {} exists".format(args.shard, sl))
+                    continue
+                
+                if sl > 0:
+                    previous_slice_hash = getShardHash(
+                        args.container, args.label, args.shard, until=sl * slice_size
+                    )
+
+                    # Load weights.
+                    model.load_state_dict(
+                        torch.load(
+                            "containers/{}/cache/{}.pt".format(
+                                args.container, previous_slice_hash
+                            )
+                        )
+                    )
+                
+                    print("Load model weights from slice {} for shard {} successfully".format(sl - 1, args.shard))
+
+            # Mark model as loaded for next slices.
+            loaded = True
         
         # Instantiate optimizer
         if args.optimizer == "adam":
@@ -153,264 +218,182 @@ for shard in tqdm(range(args.shards)):
 
         # Init ReduceLROnPlateau scheduler 
         reduce_lr = ReduceLROnPlateau(optimizer, 
-                                      mode='min', 
-                                      factor=0.5, 
-                                      patience=5, 
-                                      min_lr=1e-5)
+                                    mode='min', 
+                                    factor=0.5, 
+                                    patience=5, 
+                                    min_lr=1e-5)
 
         # Init EarlyStopping
         early_stopping = EarlyStopping(patience=20, min_delta=0.002, mode='min')
+        
+        # Actual training.
+        train_time = 0.0
 
-        # Get slice hash using sharded lib.
-        slice_hash = getShardHash(
-            args.container, shard, until=(sl + 1) * slice_size
-        )
+        for epoch in tqdm(range(start_epoch, slice_epochs)):
+            # ===== TRAINING =====
+            model.train()
 
-        # If checkpoints exists, skip the slice.
-        if os.path.exists(
-            "containers/{}/cache/{}.pt".format(args.container, slice_hash)
-        ):
-            print("Recovering shard {} on slice {}".format(shard, sl))
+            train_loss = 0.0
+            train_batches = 0
 
-        else:
-            # Initialize state.
-            elapsed_time = 0
-            start_epoch = 0
-            slice_epochs = int((sl + 1) * avg_epochs_per_slice) - int(
-                sl * avg_epochs_per_slice
-            )
+            epoch_start_time = time()
 
-            # If weights are already in memory (from previous slice), skip loading.
-            if not loaded:
-                # Look for a recovery checkpoint for the slice.
-                recovery_list = glob(
-                    "containers/{}/cache/{}_*.pt".format(args.container, slice_hash)
+            for images, labels in fetchShardBatch(
+                args.container,
+                shard,
+                args.dataset,
+                args.batch_size,
+                until=(sl + 1) * slice_size if sl < args.slices - 1 else None,
+            ):
+                # Convert data to torch format and send to selected device.
+                images = torch.from_numpy(images)
+
+                images = torch.stack([
+                    train_transform(img)
+                    for img in images
+                ])
+
+                gpu_images = images.to(device)
+                gpu_labels = torch.from_numpy(labels).to(device)
+
+                forward_start_time = time()
+
+                # Perform basic training step.
+                logits = model(gpu_images)
+                loss = loss_fn(logits, gpu_labels)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                train_time += time() - forward_start_time
+
+                # Calculate train loss for the epoch.
+                train_loss += loss.item()
+                train_batches += 1
+
+            train_loss /= train_batches
+
+            # ===== VALIDATION =====
+            model.eval()   
+
+            correct = 0
+            total = 0
+
+            val_loss = 0.0
+            val_batches = 0
+
+            with torch.no_grad():  
+                for val_images, val_labels in fetchValBatch(
+                    args.container, 
+                    shard, 
+                    args.dataset, 
+                    args.batch_size
+                ):
+                    gpu_val_images = torch.from_numpy(val_images).to(device)
+                    gpu_val_labels = torch.from_numpy(val_labels).to(device)
+
+                    outputs = model(gpu_val_images)
+                    preds = torch.argmax(outputs, dim=1)
+
+                    # Calculate validation loss for the epoch.
+                    loss = loss_fn(outputs, gpu_val_labels)
+
+                    val_loss += loss.item()
+                    val_batches += 1
+
+                    # Calculate validation accuracy for the epoch.
+                    correct += (preds == gpu_val_labels).sum().item()
+                    total += gpu_val_labels.size(0)
+
+            val_loss /= val_batches
+            val_acc = 100 * correct / total
+            print(f" [Epoch {epoch+1}] - Train loss: {train_loss:.4f} - Val loss: {val_loss:.4f} - Val accuracy : {val_acc:.2f}%")
+
+            # Check early stopping
+            if early_stopping(val_loss):
+                print("Early stopping triggered!")
+                break
+
+            # Update scheduler base on val_acc.
+            reduce_lr.step(val_loss)
+
+            # Create a checkpoint every chkpt_interval.
+            if (
+                args.chkpt_interval != -1
+                and epoch % args.chkpt_interval == args.chkpt_interval - 1
+            ):
+                # Save weights
+                torch.save(
+                    model.state_dict(),
+                    "containers/{}/cache/{}_{}.pt".format(
+                        args.container, slice_hash, epoch
+                    ),
                 )
-                if len(recovery_list) > 0:
-                    print(
-                        "Recovery mode for shard {} on slice {}".format(shard, sl)
+
+                # Save time
+                with open(
+                    "containers/{}/times/{}_{}.time".format(
+                        args.container, slice_hash, epoch
+                    ),
+                    "w",
+                ) as f:
+                    f.write("{}\n".format(train_time + elapsed_time))
+
+                # Remove previous checkpoint.
+                if os.path.exists(
+                    "containers/{}/cache/{}_{}.pt".format(
+                        args.container, slice_hash, epoch - args.chkpt_interval
                     )
-
-                    # Load weights.
-                    model.load_state_dict(torch.load(recovery_list[0]))
-                    start_epoch = int(
-                        recovery_list[0].split("/")[-1].split(".")[0].split("_")[1]
-                    )
-
-                    # Load time
-                    with open(
-                        "containers/{}/times/{}_{}.time".format(
-                            args.container, slice_hash, start_epoch
-                        ),
-                        "r",
-                    ) as f:
-                        elapsed_time = float(f.read())
-
-                # If there is no recovery checkpoint and this slice is not the first, load previous slice.
-                elif sl > 0:
-                    previous_slice_hash = getShardHash(
-                        args.container, shard, until=sl * slice_size
-                    )
-
-                    # Load weights.
-                    model.load_state_dict(
-                        torch.load(
-                            "containers/{}/cache/{}.pt".format(
-                                args.container, previous_slice_hash
-                            )
-                        )
-                    )
-
-                # Mark model as loaded for next slices.
-                loaded = True
-            
-            # If this is the first slice, no need to load anything.
-            elif sl == 0:
-                loaded = True
-
-            # Actual training.
-            train_time = 0.0
-
-            for epoch in tqdm(range(start_epoch, slice_epochs)):
-                # ===== TRAINING =====
-                model.train()
-
-                train_loss = 0.0
-                train_batches = 0
-
-                epoch_start_time = time()
-
-                for images, labels in fetchShardBatch(
-                    args.container,
-                    shard,
-                    args.dataset,
-                    args.batch_size,
-                    until=(sl + 1) * slice_size if sl < args.slices - 1 else None,
                 ):
-                    # Convert data to torch format and send to selected device.
-                    images = torch.from_numpy(images)
-
-                    images = torch.stack([
-                        train_transform(img)
-                        for img in images
-                    ])
-
-                    gpu_images = images.to(device)
-                    gpu_labels = torch.from_numpy(labels).to(device)
-
-                    forward_start_time = time()
-
-                    # Perform basic training step.
-                    logits = model(gpu_images)
-                    loss = loss_fn(logits, gpu_labels)
-
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-
-                    train_time += time() - forward_start_time
-
-                    # Calculate train loss for the epoch.
-                    train_loss += loss.item()
-                    train_batches += 1
-
-                train_loss /= train_batches
-
-                # ===== VALIDATION =====
-                model.eval()   
-
-                correct = 0
-                total = 0
-
-                val_loss = 0.0
-                val_batches = 0
-
-                with torch.no_grad():  
-                    for val_images, val_labels in fetchValBatch(
-                        args.container, 
-                        shard, 
-                        args.dataset, 
-                        args.batch_size
-                    ):
-                        gpu_val_images = torch.from_numpy(val_images).to(device)
-                        gpu_val_labels = torch.from_numpy(val_labels).to(device)
-
-                        outputs = model(gpu_val_images)
-                        preds = torch.argmax(outputs, dim=1)
-
-                        # Calculate validation loss for the epoch.
-                        loss = loss_fn(outputs, gpu_val_labels)
-
-                        val_loss += loss.item()
-                        val_batches += 1
-
-                        # Calculate validation accuracy for the epoch.
-                        correct += (preds == gpu_val_labels).sum().item()
-                        total += gpu_val_labels.size(0)
-
-                val_loss /= val_batches
-                val_acc = 100 * correct / total
-                print(f" [Epoch {epoch+1}] - Train loss: {train_loss:.4f} - Val loss: {val_loss:.4f} - Val accuracy : {val_acc:.2f}%")
-
-                # Check early stopping
-                if early_stopping(val_loss):
-                    print("Early stopping triggered!")
-                    break
-
-                # Update scheduler base on val_acc.
-                reduce_lr.step(val_loss)
-
-                # Create a checkpoint every chkpt_interval.
-                if (
-                    args.chkpt_interval != -1
-                    and epoch % args.chkpt_interval == args.chkpt_interval - 1
-                ):
-                    # Save weights
-                    torch.save(
-                        model.state_dict(),
-                        "containers/{}/cache/{}_{}.pt".format(
-                            args.container, slice_hash, epoch
-                        ),
-                    )
-
-                    # Save time
-                    with open(
-                        "containers/{}/times/{}_{}.time".format(
-                            args.container, slice_hash, epoch
-                        ),
-                        "w",
-                    ) as f:
-                        f.write("{}\n".format(train_time + elapsed_time))
-
-                    # Remove previous checkpoint.
-                    if os.path.exists(
+                    os.remove(
                         "containers/{}/cache/{}_{}.pt".format(
                             args.container, slice_hash, epoch - args.chkpt_interval
                         )
-                    ):
-                        os.remove(
-                            "containers/{}/cache/{}_{}.pt".format(
-                                args.container, slice_hash, epoch - args.chkpt_interval
-                            )
-                        )
-                    if os.path.exists(
+                    )
+                if os.path.exists(
+                    "containers/{}/times/{}_{}.time".format(
+                        args.container, slice_hash, epoch - args.chkpt_interval
+                    )
+                ):
+                    os.remove(
                         "containers/{}/times/{}_{}.time".format(
                             args.container, slice_hash, epoch - args.chkpt_interval
                         )
-                    ):
-                        os.remove(
-                            "containers/{}/times/{}_{}.time".format(
-                                args.container, slice_hash, epoch - args.chkpt_interval
-                            )
-                        )
+                    )
 
-            # When training is complete, save slice.
-            torch.save(
-                model.state_dict(),
-                "containers/{}/cache/{}.pt".format(args.container, slice_hash),
+        # When training is complete, save slice.
+        torch.save(
+            model.state_dict(),
+            "containers/{}/cache/{}.pt".format(args.container, slice_hash),
+        )
+        with open(
+            "containers/{}/times/{}.time".format(args.container, slice_hash), "w"
+        ) as f:
+            f.write("{}\n".format(train_time + elapsed_time))
+
+        # Remove previous checkpoint.
+        if os.path.exists(
+            "containers/{}/cache/{}_{}.pt".format(
+                args.container, slice_hash, args.epochs - args.chkpt_interval
             )
-            with open(
-                "containers/{}/times/{}.time".format(args.container, slice_hash), "w"
-            ) as f:
-                f.write("{}\n".format(train_time + elapsed_time))
-
-            # Remove previous checkpoint.
-            if os.path.exists(
+        ):
+            os.remove(
                 "containers/{}/cache/{}_{}.pt".format(
                     args.container, slice_hash, args.epochs - args.chkpt_interval
                 )
-            ):
-                os.remove(
-                    "containers/{}/cache/{}_{}.pt".format(
-                        args.container, slice_hash, args.epochs - args.chkpt_interval
-                    )
-                )
+            )
 
-            if os.path.exists(
+        if os.path.exists(
+            "containers/{}/times/{}_{}.time".format(
+                args.container, slice_hash, args.epochs - args.chkpt_interval
+            )
+        ):
+            os.remove(
                 "containers/{}/times/{}_{}.time".format(
                     args.container, slice_hash, args.epochs - args.chkpt_interval
                 )
-            ):
-                os.remove(
-                    "containers/{}/times/{}_{}.time".format(
-                        args.container, slice_hash, args.epochs - args.chkpt_interval
-                    )
-                )
-
-            # If this is the last slice, create a symlink attached to it.
-            if sl == args.slices - 1:
-                os.symlink(
-                    "{}.pt".format(slice_hash),
-                    "containers/{}/cache/shard-{}.pt".format(
-                        args.container, shard
-                    ),
-                )
-                os.symlink(
-                    "{}.time".format(slice_hash),
-                    "containers/{}/times/shard-{}.time".format(
-                        args.container, shard
-                    ),
-                )
+            )
 
         if sl == args.slices - 1:
             os.symlink(
