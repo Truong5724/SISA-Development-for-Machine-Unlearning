@@ -375,23 +375,23 @@ for shard in tqdm(range(args.shards)):
         # Remove previous checkpoint.
         if os.path.exists(
             "containers/{}/cache/{}_{}.pt".format(
-                args.container, slice_hash, args.epochs - args.chkpt_interval
+                args.container, slice_hash, epoch - args.chkpt_interval
             )
         ):
             os.remove(
                 "containers/{}/cache/{}_{}.pt".format(
-                    args.container, slice_hash, args.epochs - args.chkpt_interval
+                    args.container, slice_hash, epoch - args.chkpt_interval
                 )
             )
 
         if os.path.exists(
             "containers/{}/times/{}_{}.time".format(
-                args.container, slice_hash, args.epochs - args.chkpt_interval
+                args.container, slice_hash, epoch - args.chkpt_interval
             )
         ):
             os.remove(
                 "containers/{}/times/{}_{}.time".format(
-                    args.container, slice_hash, args.epochs - args.chkpt_interval
+                    args.container, slice_hash, epoch - args.chkpt_interval
                 )
             )
 
