@@ -373,43 +373,26 @@ for shard in tqdm(range(args.shards)):
             f.write("{}\n".format(train_time + elapsed_time))
 
         # Remove previous checkpoint.
-        if os.path.exists(
-            "containers/{}/cache/{}_{}.pt".format(
-                args.container, slice_hash, epoch - args.chkpt_interval
-            )
-        ):
-            os.remove(
-                "containers/{}/cache/{}_{}.pt".format(
-                    args.container, slice_hash, epoch - args.chkpt_interval
-                )
-            )
+        last_checkpoint_pt = glob("containers/{}/cache/{}_*.pt".format(args.container, slice_hash))
+        if last_checkpoint_pt:
+            os.remove(last_checkpoint_pt[0])
 
-        if os.path.exists(
-            "containers/{}/times/{}_{}.time".format(
-                args.container, slice_hash, epoch - args.chkpt_interval
-            )
-        ):
-            os.remove(
-                "containers/{}/times/{}_{}.time".format(
-                    args.container, slice_hash, epoch - args.chkpt_interval
-                )
-            )
+        last_checkpoint_time = glob("containers/{}/times/{}_*.time".format(args.container, slice_hash))
+        if last_checkpoint_time:
+            os.remove(last_checkpoint_time[0])
 
+        # If this is the last slice, create a symlink attached to it.
         if sl == args.slices - 1:
             os.symlink(
                 "{}.pt".format(slice_hash),
-                "containers/{}/cache/shard-{}.pt".format(
-                    args.container, shard
+                "containers/{}/cache/shard-{}:{}.pt".format(
+                    args.container, args.shard, args.label
                 ),
             )
-            if not os.path.exists(
-                "containers/{}/times/shard-{}.time".format(
-                    args.container, shard
-                )
-            ):
-                os.symlink(
-                    "null.time",
-                    "containers/{}/times/shard-{}.time".format(
-                        args.container, shard
-                    ),
-                )
+
+            os.symlink(
+                "{}.time".format(slice_hash),
+                "containers/{}/times/shard-{}:{}.time".format(
+                    args.container, args.shard, args.label
+                ),
+            )
