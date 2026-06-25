@@ -31,9 +31,9 @@ plt.figure()
 
 sns.heatmap(cm, annot=True, fmt="d")
 
-plt.title("Confusion Matrix")
-plt.xlabel("Predicted label")
-plt.ylabel("True label")
+# plt.title("Confusion Matrix")
+plt.xlabel("Nhãn dự đoán")
+plt.ylabel("Nhãn thật")
 
 plt.tight_layout()
 
