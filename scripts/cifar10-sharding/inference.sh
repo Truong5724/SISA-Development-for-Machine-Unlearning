@@ -48,7 +48,7 @@ do
         --shards 10 \
         --dataset datasets/cifar10/datasetfile \
         --batch_size 64 \
-        --dropout_rate 0.3 \
+        --dropout_rate 0.2 \
         --container "cifar10" \
         --unlearn_shards "${forgot_shards[@]}" | tail -n 1)
 
