@@ -163,7 +163,7 @@ for shard in tqdm(range(args.shards)):
             )
             if len(recovery_list) > 0:
                 print(
-                    "Recovery mode for shard {} on slice {}".format(args.shard, sl)
+                    "Recovery mode for shard {} on slice {}".format(shard, sl)
                 )
 
                 # Load weights.
@@ -186,7 +186,7 @@ for shard in tqdm(range(args.shards)):
                 if os.path.exists(
                     "containers/{}/cache/{}.pt".format(args.container, slice_hash)
                 ):
-                    print("Model weights for shard {} on slice {} exists".format(args.shard, sl))
+                    print("Model weights for shard {} on slice {} exists".format(shard, sl))
                     continue
                 
                 if sl > 0:
@@ -203,7 +203,7 @@ for shard in tqdm(range(args.shards)):
                         )
                     )
                 
-                    print("Load model weights from slice {} for shard {} successfully".format(sl - 1, args.shard))
+                    print("Load model weights from slice {} for shard {} successfully".format(sl - 1, shard))
 
             # Mark model as loaded for next slices.
             loaded = True
