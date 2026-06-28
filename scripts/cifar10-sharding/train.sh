@@ -8,11 +8,11 @@ python train.py \
     --shards 10 \
     --slices 1 \
     --dataset datasets/cifar10/datasetfile \
-    --epochs 50 \
+    --epochs 100 \
     --batch_size 64 \
-    --learning_rate 0.05 \
-    --dropout_rate 0.3 \
+    --learning_rate 0.02 \
+    --dropout_rate 0.2 \
     --optimizer "sgd" \
-    --chkpt_interval 3 \
+    --chkpt_interval 5 \
     --container "cifar10" 
     

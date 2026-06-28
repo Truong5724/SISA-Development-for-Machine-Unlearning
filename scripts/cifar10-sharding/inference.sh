@@ -39,7 +39,7 @@ cases=(
 for case in "${cases[@]}"
 do
     # Convert string to array
-    read -a forgot_shards <<< "$case"
+    IFS=' ' read -ra forgot_shards <<< "$case"
 
     echo "Unlearning shards: ${forgot_shards[*]}"
 
