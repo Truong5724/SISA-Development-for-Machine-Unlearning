@@ -191,7 +191,7 @@ for shard in tqdm(range(args.shards)):
                 
                 if sl > 0:
                     previous_slice_hash = getShardHash(
-                        args.container, args.label, args.shard, until=sl * slice_size
+                        args.container, args.shard, until=sl * slice_size
                     )
 
                     # Load weights.
@@ -210,7 +210,7 @@ for shard in tqdm(range(args.shards)):
 
         elif sl > 0:
             previous_slice_hash = getShardHash(
-                args.container, args.label, args.shard, until=sl * slice_size
+                args.container, args.shard, until=sl * slice_size
             )
             
             with open(
