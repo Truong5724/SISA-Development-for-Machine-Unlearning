@@ -400,23 +400,23 @@ for shard in tqdm(range(args.shards)):
         if sl == args.slices - 1:
             os.symlink(
                 "{}.pt".format(slice_hash),
-                "containers/{}/cache/shard-{}:{}.pt".format(
-                    args.container, shard, args.label
+                "containers/{}/cache/shard-{}.pt".format(
+                    args.container, shard
                 ),
             )
 
             if not os.path.exists("containers/{}/times/{}.time".format(args.container, slice_hash)):
                 os.symlink(
                     "null.time",
-                    "containers/{}/times/shard-{}:{}.time".format(
-                        args.container, shard, args.label
+                    "containers/{}/times/shard-{}.time".format(
+                        args.container, shard
                     ),
                 )
 
             else:
                 os.symlink(
                     "{}.time".format(slice_hash),
-                    "containers/{}/times/shard-{}:{}.time".format(
-                        args.container, shard, args.label
+                    "containers/{}/times/shard-{}.time".format(
+                        args.container, shard
                     ),
                 )
