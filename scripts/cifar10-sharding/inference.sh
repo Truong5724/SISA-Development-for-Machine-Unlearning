@@ -15,7 +15,7 @@ metric=$(python inference.py \
     --shards 10 \
     --dataset datasets/cifar10/datasetfile \
     --batch_size 64 \
-    --dropout_rate 0.3 \
+    --dropout_rate 0.2 \
     --container "cifar10" | tail -n 1)
 
 cat containers/cifar10/times/shard-*.time > "containers/cifar10/times/times.tmp"
