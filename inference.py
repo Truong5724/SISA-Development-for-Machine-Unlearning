@@ -28,9 +28,6 @@ parser.add_argument("--container", help="Name of the container")
 parser.add_argument("--shards", default=1, type=int, help="Number of shards to train on, default 1")
 
 parser.add_argument(
-    "--slices", default=1, type=int, help="Number of slices to use, default 1"
-)
-parser.add_argument(
     "--dataset",
     default="datasets/purchase/datasetfile",
     help="Location of the datasetfile, default datasets/purchase/datasetfile",

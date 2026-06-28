@@ -401,7 +401,7 @@ for shard in tqdm(range(args.shards)):
             os.symlink(
                 "{}.pt".format(slice_hash),
                 "containers/{}/cache/shard-{}:{}.pt".format(
-                    args.container, args.shard, args.label
+                    args.container, shard, args.label
                 ),
             )
 
@@ -409,7 +409,7 @@ for shard in tqdm(range(args.shards)):
                 os.symlink(
                     "null.time",
                     "containers/{}/times/shard-{}:{}.time".format(
-                        args.container, args.shard, args.label
+                        args.container, shard, args.label
                     ),
                 )
 
@@ -417,6 +417,6 @@ for shard in tqdm(range(args.shards)):
                 os.symlink(
                     "{}.time".format(slice_hash),
                     "containers/{}/times/shard-{}:{}.time".format(
-                        args.container, args.shard, args.label
+                        args.container, shard, args.label
                     ),
                 )

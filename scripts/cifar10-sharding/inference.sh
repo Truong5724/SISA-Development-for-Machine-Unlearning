@@ -13,7 +13,6 @@ slices=1
 metric=$(python inference.py \
     --model cifar10 \
     --shards 10 \
-    --slices ${slices} \
     --dataset datasets/cifar10/datasetfile \
     --batch_size 64 \
     --dropout_rate 0.3 \
@@ -47,7 +46,6 @@ do
     metric=$(python inference.py \
         --model cifar10 \
         --shards 10 \
-        --slices ${slices} \
         --dataset datasets/cifar10/datasetfile \
         --batch_size 64 \
         --dropout_rate 0.3 \
